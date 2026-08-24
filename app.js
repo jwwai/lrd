@@ -37,6 +37,7 @@
     prevBtn: $('prevBtn'), nextBtn: $('nextBtn'), npFav: $('npFav'),
     npGenre: $('npGenre'), npName: $('npName'),
     npStatus: $('npStatus'), liveDot: $('liveDot'), npStatusText: $('npStatusText'),
+    npOpenExternal: $('npOpenExternal'),
     muteBtn: $('muteBtn'), volumeSlider: $('volumeSlider'),
     castBtn: $('castBtn'), castMenu: $('castMenu'),
     sourceBackdrop: $('sourceBackdrop'), sourceSelect: $('sourceSelect'),
@@ -57,6 +58,7 @@
     playingUrl: null,
     hls: null,
     checking: false,
+    checkResults: new Map(),    // url -> 'online' | 'offline' | 'insecure' — persists across re-renders
   };
 
   /* ---------------- Utilities ---------------- */
@@ -165,6 +167,7 @@
           logo: pending.logo,
           genre: pending.genre,
           url: httpsify(line),
+          rawUrl: line, // original, un-upgraded URL — needed if the https attempt fails
         });
         pending = null;
       }
@@ -361,9 +364,19 @@
     const status = document.createElement('div');
     status.className = 'tile-status';
     status.dataset.role = 'status';
+    const checked = state.checkResults.get(station.url);
     if (station.url === state.playingUrl) {
       status.classList.add('playing-badge');
       status.innerHTML = `<span class="dot"></span><span>Now playing</span>`;
+    } else if (checked === 'online') {
+      status.classList.add('online');
+      status.innerHTML = `<span class="dot"></span><span>Online</span>`;
+    } else if (checked === 'offline') {
+      status.classList.add('offline');
+      status.innerHTML = `<span class="dot"></span><span>Offline</span>`;
+    } else if (checked === 'insecure') {
+      status.classList.add('insecure');
+      status.innerHTML = `<span class="dot"></span><span>Insecure</span>`;
     } else {
       status.innerHTML = `<span class="dot"></span><span>Tap to play</span>`;
     }
@@ -395,6 +408,30 @@
     el.iconPlay.hidden = isPlaying; el.iconPause.hidden = !isPlaying;
     el.iconPlay2.hidden = isPlaying; el.iconPause2.hidden = !isPlaying;
     el.disc.classList.toggle('spinning', isPlaying);
+  }
+
+  // Browsers force an HTTPS attempt for any <audio>/HLS subresource on an
+  // HTTPS page and simply refuse to load it if that fails — there is no
+  // client-side way around that. When a station's original listing was
+  // http:// and playback fails, that's almost certainly why. Surface it
+  // plainly and offer the one thing that *does* work: opening the raw
+  // stream as a top-level tab, which browsers don't restrict the same way.
+  function showPlaybackError(station) {
+    setPlayIcon(false);
+    const insecure = station && station.rawUrl
+      && /^http:\/\//i.test(station.rawUrl)
+      && location.protocol === 'https:';
+
+    if (insecure) {
+      setStatus('err', 'Blocked \u2014 insecure stream');
+      el.npOpenExternal.hidden = false;
+      el.npOpenExternal.onclick = () => window.open(station.rawUrl, '_blank', 'noopener');
+      toast(`"${station.name}" only streams over unencrypted HTTP, which browsers block from a secure page like this one. Tap "Open this stream directly" to play it in a new tab.`, 5200);
+    } else {
+      setStatus('err', 'Stream unavailable');
+      el.npOpenExternal.hidden = true;
+      if (station) toast(`Couldn't play "${station.name}" — the stream may be offline or blocked.`);
+    }
   }
 
   // Some directory entries point at a .pls/.m3u *wrapper* file rather than
@@ -433,6 +470,7 @@
 
     setStatus('buffering', 'Connecting…');
     setPlayIcon(false);
+    el.npOpenExternal.hidden = true;
     renderActiveList();
 
     const requestedUrl = station.url;
@@ -445,10 +483,7 @@
       const hls = new window.Hls({ enableWorker: true });
       state.hls = hls;
       hls.on(window.Hls.Events.ERROR, (_evt, data) => {
-        if (data && data.fatal) {
-          setStatus('err', 'Stream unavailable');
-          toast(`Couldn't play "${station.name}" — the stream may be offline.`);
-        }
+        if (data && data.fatal) showPlaybackError(station);
       });
       hls.loadSource(url);
       hls.attachMedia(el.audio);
@@ -487,12 +522,7 @@
   el.audio.addEventListener('playing', () => { setStatus('live', 'On air'); setPlayIcon(true); });
   el.audio.addEventListener('waiting', () => { setStatus('buffering', 'Buffering…'); });
   el.audio.addEventListener('pause', () => { setPlayIcon(false); if (!el.audio.ended) setStatus(null, 'Paused'); });
-  el.audio.addEventListener('error', () => {
-    setStatus('err', 'Stream unavailable');
-    setPlayIcon(false);
-    const st = currentStation();
-    if (st) toast(`Couldn't play "${st.name}" — the stream may be offline or blocked.`);
-  });
+  el.audio.addEventListener('error', () => showPlaybackError(currentStation()));
 
   /* ---------------- Check channels ---------------- */
   async function probeStream(url, timeoutMs = 6000) {
@@ -531,16 +561,22 @@
     async function worker() {
       while (i < list.length) {
         const station = list[i++];
-        const result = await probeStream(station.url);
+        let result = await probeStream(station.url);
+        if (result === 'offline' && station.rawUrl && /^http:\/\//i.test(station.rawUrl) && location.protocol === 'https:') {
+          result = 'insecure'; // likely blocked by the browser's HTTPS-upgrade-or-fail policy, not actually dead
+        }
+        if (result !== 'unknown') state.checkResults.set(station.url, result);
+
         const node = [...el.grid.children].find(t =>
           t.querySelector('.tile-fav')?.dataset.url === station.url
         );
         if (node && station.url !== state.playingUrl) {
           const status = node.querySelector('[data-role="status"]');
           if (status && result !== 'unknown') {
-            status.classList.remove('online', 'offline');
+            status.classList.remove('online', 'offline', 'insecure');
             status.classList.add(result);
-            status.innerHTML = `<span class="dot"></span><span>${result === 'online' ? 'Online' : 'Offline'}</span>`;
+            const label = result === 'online' ? 'Online' : result === 'insecure' ? 'Insecure' : 'Offline';
+            status.innerHTML = `<span class="dot"></span><span>${label}</span>`;
           }
         }
       }
