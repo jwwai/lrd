@@ -616,7 +616,7 @@ input,select{ font-family:inherit; }
 .tile-fav.active svg path{ fill:var(--ember); }
 
 .tile-name{
-  font-size:13.5px; font-weight:600;
+  font-size:13.5px; font-weight:600; color:#ffffff;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .tile-genre{
