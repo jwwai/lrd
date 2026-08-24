@@ -20,7 +20,7 @@
   // see the comments in that file) and paste its URL here to make HTTP-only
   // stations play in-app for every visitor automatically. Left empty, the
   // app behaves exactly as before — no behavior change.
-  const STREAM_PROXY_BASE = 'https://liveradio.dr-navipani.workers.dev/?url='; // e.g. 'https://live-radio-relay.YOUR-NAME.workers.dev/?url='
+  const STREAM_PROXY_BASE = ''; // e.g. 'https://live-radio-relay.YOUR-NAME.workers.dev/?url='
 
   const PINNED_CODES = ['IN', 'US']; // "Country List order: Fav, India, USA, ..."
 
@@ -190,6 +190,42 @@
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();
     return parseM3U(text);
+  }
+
+  // A pasted "Custom URL" might be a directory of many stations (what
+  // parseM3U expects) — or it might itself be a single raw HLS stream
+  // (its lines are segment/variant references, not #EXTINF+URL station
+  // pairs, so parseM3U correctly finds zero stations there). Detect that
+  // case from the HLS-specific tags and treat the pasted URL as the one
+  // station, instead of reporting an empty playlist.
+  function looksLikeHlsPlaylist(text) {
+    return /^#EXTM3U/m.test(text) && /#EXT-X-(VERSION|TARGETDURATION|STREAM-INF|MEDIA-SEQUENCE)/i.test(text);
+  }
+
+  function nameFromStreamUrl(url) {
+    try {
+      const u = new URL(url);
+      const parts = u.pathname.split('/').filter(Boolean);
+      const meaningful = parts.find(p => !/^(playlist|stream|index|master)(\.\w+)?$/i.test(p));
+      return meaningful ? `${u.hostname} \u2014 ${meaningful}` : u.hostname;
+    } catch {
+      return 'Custom stream';
+    }
+  }
+
+  async function fetchCustomSource(url) {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const stations = parseM3U(text);
+    if (stations.length) return { stations, singleStream: false };
+    if (looksLikeHlsPlaylist(text)) {
+      return {
+        stations: [{ name: nameFromStreamUrl(url), genre: 'Live stream', logo: '', url: httpsify(url), rawUrl: url }],
+        singleStream: true,
+      };
+    }
+    return { stations: [], singleStream: false };
   }
 
   /* ---------------- Sidebar / countries ---------------- */
@@ -667,12 +703,13 @@
     el.sourceLoad.disabled = true;
     el.sourceLoad.textContent = 'Loading…';
     try {
-      const stations = await fetchM3U(url);
+      const { stations, singleStream } = await fetchCustomSource(url);
       if (!stations.length) throw new Error('empty');
       state.countryCache.set('CUSTOM', stations);
-      state.customLabel = parsed.hostname;
+      state.customLabel = singleStream ? stations[0].name : parsed.hostname;
       closeModal();
       selectTab('CUSTOM');
+      if (singleStream) playStation(stations[0]); // pasting one raw stream link means "play this"
     } catch (err) {
       el.modalError.textContent = 'Couldn\u2019t load that playlist — check the URL or the source\u2019s CORS policy.';
       el.modalError.hidden = false;
