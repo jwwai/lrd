@@ -20,7 +20,7 @@
   // see the comments in that file) and paste its URL here to make HTTP-only
   // stations play in-app for every visitor automatically. Left empty, the
   // app behaves exactly as before — no behavior change.
-  const STREAM_PROXY_BASE = ''; // e.g. 'https://live-radio-relay.YOUR-NAME.workers.dev/?url='
+  const STREAM_PROXY_BASE = 'https://liveradio.dr-navipani.workers.dev/?url='; // e.g. 'https://live-radio-relay.YOUR-NAME.workers.dev/?url='
 
   const PINNED_CODES = ['IN', 'US']; // "Country List order: Fav, India, USA, ..."
 
