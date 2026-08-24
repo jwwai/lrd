@@ -59,6 +59,7 @@ input,select{ font-family:inherit; }
 }
 
 .icon-btn svg, .ctrl-btn svg{ display:block; }
+.icon-btn svg[hidden], .ctrl-btn svg[hidden]{ display:none; }
 
 /* ============================================================
    App shell / layout
@@ -526,6 +527,7 @@ input,select{ font-family:inherit; }
 .tile-status.offline .dot{ background:var(--danger); }
 .tile-status.playing-badge{ color:var(--lime); }
 
+.load-more[hidden]{ display:none; }
 .load-more{
   display:block; margin:20px auto 6px;
   padding:10px 22px;
@@ -555,6 +557,9 @@ input,select{ font-family:inherit; }
   display:flex; align-items:flex-start; justify-content:center;
   padding-top:12vh;
   z-index:50;
+}
+.modal-backdrop[hidden]{
+  display:none; /* higher specificity than .modal-backdrop so the hidden attribute always wins */
 }
 .modal{
   width:min(92vw, 380px);
