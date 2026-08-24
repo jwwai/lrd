@@ -14,7 +14,6 @@
   const countryM3U = (code) => `${IPRD_BASE}by_country/${code.toLowerCase()}.m3u`;
 
   const PINNED_CODES = ['IN', 'US']; // "Country List order: Fav, India, USA, ..."
-  const PAGE_SIZE = 60;
 
   const LS_FAVS = 'liveradio.favs.v1';
   const LS_LAST_TAB = 'liveradio.lastTab.v1';
@@ -28,7 +27,7 @@
     favTab: $('favTab'), favCount: $('favCount'),
     countryList: $('countryList'),
     sourceBtn: $('sourceBtn'),
-    grid: $('grid'), loadMoreBtn: $('loadMoreBtn'), emptyState: $('emptyState'),
+    grid: $('grid'), emptyState: $('emptyState'),
     channelsTitle: $('channelsTitle'), channelsCount: $('channelsCount'),
     searchInput: $('searchInput'), checkBtn: $('checkBtn'),
     audio: $('audio'),
@@ -38,7 +37,8 @@
     prevBtn: $('prevBtn'), nextBtn: $('nextBtn'), npFav: $('npFav'),
     npGenre: $('npGenre'), npName: $('npName'),
     npStatus: $('npStatus'), liveDot: $('liveDot'), npStatusText: $('npStatusText'),
-    volumeSlider: $('volumeSlider'),
+    muteBtn: $('muteBtn'), volumeSlider: $('volumeSlider'),
+    castBtn: $('castBtn'), castMenu: $('castMenu'),
     sourceBackdrop: $('sourceBackdrop'), sourceSelect: $('sourceSelect'),
     customUrlWrap: $('customUrlWrap'), customUrlInput: $('customUrlInput'),
     modalError: $('modalError'), sourceCancel: $('sourceCancel'), sourceLoad: $('sourceLoad'),
@@ -52,8 +52,7 @@
     favorites: loadFavorites(), // Map(url -> station)
     currentTab: null,           // 'FAV' | ISO code | 'CUSTOM'
     customLabel: '',
-    activeList: [],             // full filtered list for current tab
-    visibleCount: PAGE_SIZE,
+    activeList: [],             // full list for current tab (grid renders every filtered station — no pagination)
     searchTerm: '',
     playingUrl: null,
     hls: null,
@@ -244,7 +243,6 @@
   /* ---------------- Tab / list selection ---------------- */
   async function selectTab(code) {
     state.currentTab = code;
-    state.visibleCount = PAGE_SIZE;
     state.searchTerm = '';
     el.searchInput.value = '';
     markActiveTab();
@@ -269,7 +267,6 @@
     el.channelsCount.textContent = '';
     el.grid.innerHTML = '';
     el.emptyState.hidden = true;
-    el.loadMoreBtn.hidden = true;
 
     if (state.countryCache.has(code)) {
       state.activeList = state.countryCache.get(code);
@@ -314,17 +311,13 @@
       el.emptyState.textContent = state.currentTab === 'FAV'
         ? 'No favourites yet — tap the heart on any channel to save it here.'
         : 'No channels here yet. Try another search or country.';
-      el.loadMoreBtn.hidden = true;
       return;
     }
     el.emptyState.hidden = true;
 
-    const slice = list.slice(0, state.visibleCount);
     const frag = document.createDocumentFragment();
-    slice.forEach(s => frag.appendChild(makeTile(s)));
+    list.forEach(s => frag.appendChild(makeTile(s)));
     el.grid.appendChild(frag);
-
-    el.loadMoreBtn.hidden = list.length <= state.visibleCount;
   }
 
   function makeTile(station) {
@@ -496,8 +489,10 @@
 
   async function checkChannels() {
     if (state.checking) return;
-    const list = filteredList().slice(0, state.visibleCount);
-    if (!list.length) return;
+    const full = filteredList();
+    if (!full.length) return;
+    const CAP = 200;
+    const list = full.slice(0, CAP);
     state.checking = true;
     el.checkBtn.classList.add('busy');
 
@@ -523,7 +518,9 @@
     await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     state.checking = false;
     el.checkBtn.classList.remove('busy');
-    toast('Finished checking visible channels.');
+    toast(full.length > CAP
+      ? `Checked the first ${CAP} of ${full.length} channels — search to narrow it down and check the rest.`
+      : 'Finished checking channels.');
   }
 
   /* ---------------- Channel Source modal ---------------- */
@@ -582,21 +579,15 @@
 
   /* ---------------- Wire up events ---------------- */
   el.favTab.addEventListener('click', () => selectTab('FAV'));
-  el.sourceBtn.addEventListener('click', openModal);
+  el.sourceBtn.addEventListener('click', () => { closeCastMenu(); openModal(); });
   el.sourceCancel.addEventListener('click', closeModal);
   el.sourceBackdrop.addEventListener('click', (e) => { if (e.target === el.sourceBackdrop) closeModal(); });
   el.sourceLoad.addEventListener('click', handleLoadSource);
 
   el.searchInput.addEventListener('input', debounce((e) => {
     state.searchTerm = e.target.value;
-    state.visibleCount = PAGE_SIZE;
     renderActiveList();
   }, 180));
-
-  el.loadMoreBtn.addEventListener('click', () => {
-    state.visibleCount += PAGE_SIZE;
-    renderActiveList();
-  });
 
   el.checkBtn.addEventListener('click', checkChannels);
 
@@ -606,24 +597,168 @@
   el.nextBtn.addEventListener('click', () => stepStation(1));
   el.npFav.addEventListener('click', () => { const s = currentStation(); if (s) toggleFav(s); });
 
+  /* ---------------- Audio: linked mute + volume ---------------- */
+  let lastVolume = 0.8;
+
+  function volumeIcon(level) {
+    if (level === 'muted') {
+      return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9v6h4l5 5V4L8 9z"/><path d="M16.3 8.3l5.4 5.4M21.7 8.3l-5.4 5.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+    }
+    if (level === 'low') {
+      return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9v6h4l5 5V4L8 9z"/><path d="M15.5 10a3 3 0 0 1 0 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>';
+    }
+    return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9v6h4l5 5V4L8 9z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.2 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>';
+  }
+
+  function updateVolumeUI() {
+    const effective = el.audio.muted ? 0 : el.audio.volume;
+    const level = effective === 0 ? 'muted' : (effective < 0.5 ? 'low' : 'high');
+    el.muteBtn.innerHTML = volumeIcon(level);
+    el.muteBtn.classList.toggle('muted', level === 'muted');
+    el.muteBtn.setAttribute('aria-label', level === 'muted' ? 'Unmute' : 'Mute');
+    el.muteBtn.title = level === 'muted' ? 'Unmute' : 'Mute';
+    el.volumeSlider.value = Math.round(effective * 100);
+  }
+
+  function persistVolume() {
+    try { localStorage.setItem(LS_VOLUME, String(Math.round((el.audio.muted ? 0 : el.audio.volume) * 100))); }
+    catch { /* ignore */ }
+  }
+
+  el.muteBtn.addEventListener('click', () => {
+    if (el.audio.muted || el.audio.volume === 0) {
+      el.audio.muted = false;
+      el.audio.volume = lastVolume > 0 ? lastVolume : 0.8;
+    } else {
+      lastVolume = el.audio.volume;
+      el.audio.muted = true;
+    }
+    updateVolumeUI();
+    persistVolume();
+  });
+
   el.volumeSlider.addEventListener('input', (e) => {
     const v = Number(e.target.value) / 100;
+    el.audio.muted = false;
     el.audio.volume = v;
-    try { localStorage.setItem(LS_VOLUME, String(e.target.value)); } catch { /* ignore */ }
+    if (v > 0) lastVolume = v;
+    updateVolumeUI();
+    persistVolume();
+  });
+
+  /* ---------------- Cast (AirPlay / Remote Playback / output device) ---------------- */
+  function castOption(title, sub) {
+    const btn = document.createElement('button');
+    btn.className = 'cast-option';
+    btn.setAttribute('role', 'menuitem');
+    const t = document.createElement('span');
+    t.textContent = title;
+    btn.appendChild(t);
+    if (sub) {
+      const s = document.createElement('small');
+      s.textContent = sub;
+      btn.appendChild(s);
+    }
+    return btn;
+  }
+
+  function closeCastMenu() {
+    el.castMenu.hidden = true;
+    el.castBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  async function buildCastMenu() {
+    el.castMenu.innerHTML = '';
+    const title = document.createElement('p');
+    title.className = 'cast-title';
+    title.textContent = 'Cast audio to';
+    el.castMenu.appendChild(title);
+    let any = false;
+
+    // Apple devices — AirPlay, via Safari/WebKit's native target picker.
+    if (typeof el.audio.webkitShowPlaybackTargetPicker === 'function') {
+      any = true;
+      const btn = castOption('AirPlay', 'Apple TV, HomePod, AirPlay speakers');
+      btn.addEventListener('click', () => {
+        closeCastMenu();
+        try { el.audio.webkitShowPlaybackTargetPicker(); }
+        catch { toast('AirPlay is unavailable right now.'); }
+      });
+      el.castMenu.appendChild(btn);
+    }
+
+    // Chromecast / smart TVs — standard Remote Playback API (Chrome/Android, WiFi).
+    if ('remote' in el.audio) {
+      any = true;
+      const btn = castOption('Cast device', 'Chromecast & smart TVs on this network');
+      btn.addEventListener('click', async () => {
+        closeCastMenu();
+        try { await el.audio.remote.prompt(); }
+        catch { toast('No cast devices found on this network.'); }
+      });
+      el.castMenu.appendChild(btn);
+    }
+
+    // Already-paired outputs (Bluetooth speakers/headphones, wired, etc.) via the Audio Output Devices API.
+    if (navigator.mediaDevices && typeof el.audio.setSinkId === 'function') {
+      try {
+        const devices = (await navigator.mediaDevices.enumerateDevices())
+          .filter(d => d.kind === 'audiooutput' && d.deviceId !== 'default');
+        if (devices.length) {
+          any = true;
+          const sub = document.createElement('p');
+          sub.className = 'cast-subtitle';
+          sub.textContent = 'Play through';
+          el.castMenu.appendChild(sub);
+          devices.forEach((d, i) => {
+            const btn = castOption(d.label || `Speaker ${i + 1}`, '');
+            btn.addEventListener('click', async () => {
+              closeCastMenu();
+              try { await el.audio.setSinkId(d.deviceId); toast(`Playing through ${d.label || 'selected device'}.`); }
+              catch { toast('Couldn\u2019t switch to that output.'); }
+            });
+            el.castMenu.appendChild(btn);
+          });
+        }
+      } catch { /* device labels can be withheld until a permission grant exists — safe to skip */ }
+    }
+
+    const note = document.createElement('p');
+    note.className = 'cast-note';
+    note.textContent = any
+      ? 'Bluetooth speakers already connected in your device settings are used automatically.'
+      : 'This browser doesn\u2019t expose a cast API. On iPhone/iPad, use Control Center \u2192 AirPlay. On Android, use the Cast tile in quick settings. Bluetooth speakers work automatically once paired.';
+    el.castMenu.appendChild(note);
+  }
+
+  function openCastMenu() {
+    buildCastMenu();
+    el.castMenu.hidden = false;
+    el.castBtn.setAttribute('aria-expanded', 'true');
+  }
+
+  el.castBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (el.castMenu.hidden) openCastMenu(); else closeCastMenu();
+  });
+  document.addEventListener('click', (e) => {
+    if (!el.castMenu.hidden && !el.castMenu.contains(e.target) && e.target !== el.castBtn) closeCastMenu();
   });
 
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
     if (e.code === 'Space') { e.preventDefault(); togglePlayPause(); }
-    if (e.key === 'Escape' && !el.sourceBackdrop.hidden) closeModal();
+    if (e.key === 'Escape') { if (!el.sourceBackdrop.hidden) closeModal(); if (!el.castMenu.hidden) closeCastMenu(); }
   });
 
   /* ---------------- Init ---------------- */
   (function init() {
     el.favCount.textContent = state.favorites.size;
     const savedVol = localStorage.getItem(LS_VOLUME);
-    if (savedVol !== null) { el.volumeSlider.value = savedVol; el.audio.volume = Number(savedVol) / 100; }
-    else { el.audio.volume = 0.8; }
+    const startPct = savedVol !== null ? Math.max(0, Math.min(100, Number(savedVol))) : 80;
+    el.audio.volume = startPct / 100;
+    lastVolume = startPct > 0 ? startPct / 100 : 0.8;
+    updateVolumeUI();
     loadSummary();
   })();
 })();
