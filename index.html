@@ -80,9 +80,17 @@
         </button>
       </div>
 
-      <div class="np-volume">
-        <svg viewBox="0 0 24 24" fill="currentColor" class="vol-icon"><path d="M4 9v6h4l5 5V4L8 9z"/></svg>
+      <div class="np-audio">
+        <button class="mute-btn" id="muteBtn" title="Mute" aria-label="Mute">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9v6h4l5 5V4L8 9z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.2 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>
+        </button>
         <input type="range" id="volumeSlider" min="0" max="100" value="80" aria-label="Volume">
+        <div class="cast-wrap">
+          <button class="cast-btn" id="castBtn" title="Cast to a device" aria-haspopup="menu" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M2 16a4 4 0 0 1 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M2 16a8 8 0 0 1 8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="2.5" cy="20.5" r="1.4" fill="currentColor"/></svg>
+          </button>
+          <div class="cast-menu" id="castMenu" role="menu" hidden></div>
+        </div>
       </div>
     </div>
   </section>
@@ -106,7 +114,6 @@
     </div>
 
     <div class="grid" id="grid" role="list"></div>
-    <button class="load-more" id="loadMoreBtn" hidden>Show more channels</button>
     <p class="empty-state" id="emptyState" hidden>No channels here yet. Try another search or country.</p>
   </section>
 
@@ -135,7 +142,7 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<audio id="audio" preload="none" crossorigin="anonymous"></audio>
+<audio id="audio" preload="none" crossorigin="anonymous" x-webkit-airplay="allow"></audio>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js" defer></script>
 <script src="app.js" defer></script>
