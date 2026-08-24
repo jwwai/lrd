@@ -20,7 +20,7 @@
   // see the comments in that file) and paste its URL here to make HTTP-only
   // stations play in-app for every visitor automatically. Left empty, the
   // app behaves exactly as before — no behavior change.
-  const STREAM_PROXY_BASE = ''; // e.g. 'https://live-radio-relay.YOUR-NAME.workers.dev/?url='
+  const STREAM_PROXY_BASE = 'https://liveradio.dr-navipani.workers.dev/?url='; // e.g. 'https://live-radio-relay.YOUR-NAME.workers.dev/?url='
 
   const PINNED_CODES = ['IN', 'US']; // "Country List order: Fav, India, USA, ..."
 
@@ -68,6 +68,7 @@
     hls: null,
     checking: false,
     checkResults: new Map(),    // url -> 'online' | 'offline' | 'insecure' — persists across re-renders
+    renderObserver: null,       // IntersectionObserver driving chunked grid rendering
     proxyAttempted: false,      // whether STREAM_PROXY_BASE has already been tried for the current station
   };
 
@@ -350,7 +351,30 @@
     );
   }
 
+  function statusFor(url) {
+    if (url === state.playingUrl) {
+      return { cls: 'playing-badge', html: `<span class="dot"></span><span>Now playing</span>` };
+    }
+    const checked = state.checkResults.get(url);
+    if (checked === 'online') return { cls: 'online', html: `<span class="dot"></span><span>Online</span>` };
+    if (checked === 'offline') return { cls: 'offline', html: `<span class="dot"></span><span>Offline</span>` };
+    if (checked === 'insecure') return { cls: 'insecure', html: `<span class="dot"></span><span>Insecure</span>` };
+    return { cls: '', html: `<span class="dot"></span><span>Tap to play</span>` };
+  }
+
+  // Renders the grid in small chunks instead of mounting every station at
+  // once — with large countries running into the thousands, building that
+  // many DOM nodes (each with an image) in one go is what makes the app
+  // feel slow specifically on mobile/tablet GPUs and CPUs, even though a
+  // desktop barely notices. A sentinel element at the end of the grid
+  // triggers the next chunk via IntersectionObserver as it nears the
+  // viewport, so scrolling still reveals everything automatically — no
+  // "Show more" button, same as before, just built incrementally.
+  const GRID_CHUNK_SIZE = 60;
+
   function renderActiveList() {
+    if (state.renderObserver) { state.renderObserver.disconnect(); state.renderObserver = null; }
+
     const list = filteredList();
     el.channelsCount.textContent = list.length ? `${list.length} station${list.length === 1 ? '' : 's'}` : '';
     el.grid.innerHTML = '';
@@ -364,9 +388,65 @@
     }
     el.emptyState.hidden = true;
 
-    const frag = document.createDocumentFragment();
-    list.forEach(s => frag.appendChild(makeTile(s)));
-    el.grid.appendChild(frag);
+    const sentinel = document.createElement('div');
+    sentinel.className = 'grid-sentinel';
+    sentinel.setAttribute('aria-hidden', 'true');
+    el.grid.appendChild(sentinel);
+
+    let renderedCount = 0;
+    function renderNextChunk() {
+      const slice = list.slice(renderedCount, renderedCount + GRID_CHUNK_SIZE);
+      if (!slice.length) return;
+      const frag = document.createDocumentFragment();
+      slice.forEach(s => frag.appendChild(makeTile(s)));
+      el.grid.insertBefore(frag, sentinel);
+      renderedCount += slice.length;
+
+      if (renderedCount >= list.length) {
+        if (state.renderObserver) { state.renderObserver.disconnect(); state.renderObserver = null; }
+        sentinel.remove();
+      }
+    }
+
+    renderNextChunk(); // first chunk renders immediately, so content never looks empty
+
+    if (renderedCount < list.length) {
+      state.renderObserver = new IntersectionObserver((entries) => {
+        if (entries.some(e => e.isIntersecting)) renderNextChunk();
+      }, { rootMargin: '800px 0px' });
+      state.renderObserver.observe(sentinel);
+    }
+  }
+
+  // Called after playback state changes so only the two affected tiles (the
+  // one that stopped and the one that started) update — a full re-render on
+  // every single tap would rebuild the whole chunked grid from scratch and
+  // throw away everything scrolling had already revealed.
+  function refreshPlayingVisuals() {
+    const prev = el.grid.querySelector('.tile.playing');
+    if (prev) {
+      prev.classList.remove('playing');
+      const prevUrl = prev.querySelector('.tile-fav')?.dataset.url;
+      const status = prev.querySelector('[data-role="status"]');
+      if (status && prevUrl) {
+        const { cls, html } = statusFor(prevUrl);
+        status.className = 'tile-status' + (cls ? ' ' + cls : '');
+        status.innerHTML = html;
+      }
+    }
+    if (state.playingUrl) {
+      const favBtn = [...el.grid.querySelectorAll('.tile-fav')].find(b => b.dataset.url === state.playingUrl);
+      const tile = favBtn ? favBtn.closest('.tile') : null;
+      if (tile) {
+        tile.classList.add('playing');
+        const status = tile.querySelector('[data-role="status"]');
+        if (status) {
+          const { cls, html } = statusFor(state.playingUrl);
+          status.className = 'tile-status' + (cls ? ' ' + cls : '');
+          status.innerHTML = html;
+        }
+      }
+    }
   }
 
   function makeTile(station) {
@@ -387,6 +467,7 @@
       img.src = station.logo;
       img.alt = '';
       img.loading = 'lazy';
+      img.decoding = 'async';
       img.referrerPolicy = 'no-referrer';
       img.onerror = () => img.remove();
       logo.appendChild(img);
@@ -410,22 +491,9 @@
     const status = document.createElement('div');
     status.className = 'tile-status';
     status.dataset.role = 'status';
-    const checked = state.checkResults.get(station.url);
-    if (station.url === state.playingUrl) {
-      status.classList.add('playing-badge');
-      status.innerHTML = `<span class="dot"></span><span>Now playing</span>`;
-    } else if (checked === 'online') {
-      status.classList.add('online');
-      status.innerHTML = `<span class="dot"></span><span>Online</span>`;
-    } else if (checked === 'offline') {
-      status.classList.add('offline');
-      status.innerHTML = `<span class="dot"></span><span>Offline</span>`;
-    } else if (checked === 'insecure') {
-      status.classList.add('insecure');
-      status.innerHTML = `<span class="dot"></span><span>Insecure</span>`;
-    } else {
-      status.innerHTML = `<span class="dot"></span><span>Tap to play</span>`;
-    }
+    const { cls, html } = statusFor(station.url);
+    if (cls) status.classList.add(cls);
+    status.innerHTML = html;
 
     tile.append(logo, favBtn, name, genre, status);
     tile.addEventListener('click', () => playStation(station));
@@ -567,7 +635,7 @@
     el.npOpenExternal.hidden = true;
     el.npUnblockHint.hidden = true;
     state.proxyAttempted = false;
-    renderActiveList();
+    refreshPlayingVisuals();
 
     const requestedUrl = station.url;
     const url = await resolvePlaylistUrl(requestedUrl);
