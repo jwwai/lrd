@@ -13,6 +13,15 @@
   const ALL_STATIONS_URL = IPRD_BASE + 'all_stations.m3u';
   const countryM3U = (code) => `${IPRD_BASE}by_country/${code.toLowerCase()}.m3u`;
 
+  // Browsers refuse to load a plain http:// audio stream on an https:// page
+  // (mixed content) — no client-side JS can override that, by design. The
+  // only real fix is a server that fetches the http:// stream and re-serves
+  // it over https:// instead. Deploy proxy-worker/worker.js (free, ~2 minutes,
+  // see the comments in that file) and paste its URL here to make HTTP-only
+  // stations play in-app for every visitor automatically. Left empty, the
+  // app behaves exactly as before — no behavior change.
+  const STREAM_PROXY_BASE = ''; // e.g. 'https://live-radio-relay.YOUR-NAME.workers.dev/?url='
+
   const PINNED_CODES = ['IN', 'US']; // "Country List order: Fav, India, USA, ..."
 
   const LS_FAVS = 'liveradio.favs.v1';
@@ -37,7 +46,7 @@
     prevBtn: $('prevBtn'), nextBtn: $('nextBtn'), npFav: $('npFav'),
     npGenre: $('npGenre'), npName: $('npName'),
     npStatus: $('npStatus'), liveDot: $('liveDot'), npStatusText: $('npStatusText'),
-    npOpenExternal: $('npOpenExternal'),
+    npOpenExternal: $('npOpenExternal'), npUnblockHint: $('npUnblockHint'),
     muteBtn: $('muteBtn'), volumeSlider: $('volumeSlider'),
     castBtn: $('castBtn'), castMenu: $('castMenu'),
     sourceBackdrop: $('sourceBackdrop'), sourceSelect: $('sourceSelect'),
@@ -59,6 +68,7 @@
     hls: null,
     checking: false,
     checkResults: new Map(),    // url -> 'online' | 'offline' | 'insecure' — persists across re-renders
+    proxyAttempted: false,      // whether STREAM_PROXY_BASE has already been tried for the current station
   };
 
   /* ---------------- Utilities ---------------- */
@@ -422,16 +432,36 @@
       && /^http:\/\//i.test(station.rawUrl)
       && location.protocol === 'https:';
 
-    if (insecure) {
-      setStatus('err', 'Blocked \u2014 insecure stream');
-      el.npOpenExternal.hidden = false;
-      el.npOpenExternal.onclick = () => window.open(station.rawUrl, '_blank', 'noopener');
-      toast(`"${station.name}" only streams over unencrypted HTTP, which browsers block from a secure page like this one. Tap "Open this stream directly" to play it in a new tab.`, 5200);
-    } else {
+    if (!insecure) {
       setStatus('err', 'Stream unavailable');
       el.npOpenExternal.hidden = true;
+      el.npUnblockHint.hidden = true;
       if (station) toast(`Couldn't play "${station.name}" — the stream may be offline or blocked.`);
+      return;
     }
+
+    // First, try actually playing it: if a relay is configured (see
+    // proxy-worker/worker.js), route this one attempt through it so the
+    // stream plays in-app for every visitor, with no browser settings.
+    if (STREAM_PROXY_BASE && !state.proxyAttempted && state.playingUrl === station.url) {
+      state.proxyAttempted = true;
+      setStatus('buffering', 'Retrying via secure relay…');
+      destroyHls();
+      const proxied = STREAM_PROXY_BASE + encodeURIComponent(station.rawUrl);
+      const hlsHint = /\.m3u8($|\?)/i.test(station.rawUrl);
+      attemptPlayback(station, proxied, hlsHint);
+      return;
+    }
+
+    // No relay configured (or it also failed): explain what's actually
+    // happening and offer the two things that genuinely work — opening the
+    // raw stream directly, or the visitor allowing insecure content for
+    // this site themselves in their own browser.
+    setStatus('err', 'Blocked \u2014 insecure stream');
+    el.npOpenExternal.hidden = false;
+    el.npOpenExternal.onclick = () => window.open(station.rawUrl, '_blank', 'noopener');
+    el.npUnblockHint.hidden = false;
+    toast(`"${station.name}" only streams over unencrypted HTTP, which browsers block from a secure page like this one.`, 5200);
   }
 
   // Some directory entries point at a .pls/.m3u *wrapper* file rather than
@@ -455,29 +485,11 @@
     return url;
   }
 
-  async function playStation(station) {
-    if (!station || !station.url) return;
-    destroyHls();
-    state.playingUrl = station.url;
-
-    el.npGenre.textContent = station.genre || 'Live radio';
-    el.npName.textContent = station.name;
-    el.npName.title = station.name;
-    el.npFav.classList.toggle('active', isFav(station));
-    el.discArt.style.background = station.logo ? '' : tileColorFor(station.name || station.url);
-    el.discArt.style.backgroundImage = station.logo ? `url("${station.logo}")` : 'none';
-    el.discArt.textContent = station.logo ? '' : (station.name || '?').trim().charAt(0).toUpperCase();
-
-    setStatus('buffering', 'Connecting…');
-    setPlayIcon(false);
-    el.npOpenExternal.hidden = true;
-    renderActiveList();
-
-    const requestedUrl = station.url;
-    const url = await resolvePlaylistUrl(requestedUrl);
-    if (state.playingUrl !== requestedUrl) return; // user picked something else while this resolved
-
-    const isHls = /\.m3u8($|\?)/i.test(url);
+  // hlsHint lets callers state explicitly whether the *original* stream is
+  // HLS, since a proxied URL (BASE + encodeURIComponent(rawUrl)) no longer
+  // literally ends in .m3u8 for us to detect from the request URL itself.
+  function attemptPlayback(station, url, hlsHint) {
+    const isHls = hlsHint !== undefined ? hlsHint : /\.m3u8($|\?)/i.test(url);
 
     if (isHls && window.Hls && window.Hls.isSupported()) {
       const hls = new window.Hls({ enableWorker: true });
@@ -499,6 +511,33 @@
     el.audio.play().catch(() => {
       // Autoplay was blocked or the stream failed; UI reflects via audio events.
     });
+  }
+
+  async function playStation(station) {
+    if (!station || !station.url) return;
+    destroyHls();
+    state.playingUrl = station.url;
+
+    el.npGenre.textContent = station.genre || 'Live radio';
+    el.npName.textContent = station.name;
+    el.npName.title = station.name;
+    el.npFav.classList.toggle('active', isFav(station));
+    el.discArt.style.background = station.logo ? '' : tileColorFor(station.name || station.url);
+    el.discArt.style.backgroundImage = station.logo ? `url("${station.logo}")` : 'none';
+    el.discArt.textContent = station.logo ? '' : (station.name || '?').trim().charAt(0).toUpperCase();
+
+    setStatus('buffering', 'Connecting…');
+    setPlayIcon(false);
+    el.npOpenExternal.hidden = true;
+    el.npUnblockHint.hidden = true;
+    state.proxyAttempted = false;
+    renderActiveList();
+
+    const requestedUrl = station.url;
+    const url = await resolvePlaylistUrl(requestedUrl);
+    if (state.playingUrl !== requestedUrl) return; // user picked something else while this resolved
+
+    attemptPlayback(station, url);
   }
 
   function togglePlayPause() {

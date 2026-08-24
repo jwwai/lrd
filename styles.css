@@ -405,6 +405,25 @@ input,select{ font-family:inherit; }
 .np-open-external svg{ width:13px; height:13px; flex-shrink:0; }
 .np-open-external:hover{ color:#e2ff70; }
 
+.np-unblock-hint{
+  width:100%;
+  margin-top:8px;
+  font-size:11.5px;
+  color:var(--text-faint);
+}
+.np-unblock-hint[hidden]{ display:none; }
+.np-unblock-hint summary{
+  cursor:pointer;
+  color:var(--text-dim);
+  list-style:none;
+}
+.np-unblock-hint summary::-webkit-details-marker{ display:none; }
+.np-unblock-hint summary::before{ content:'+ '; color:var(--text-faint); }
+.np-unblock-hint[open] summary::before{ content:'\2212\0020'; }
+.np-unblock-hint summary:hover{ color:var(--text); }
+.np-unblock-hint p{ margin:6px 0 0; line-height:1.5; }
+.np-unblock-hint strong{ color:var(--text-dim); }
+
 .np-controls{ display:flex; align-items:center; gap:12px; }
 .ctrl-btn{
   width:42px; height:42px;
@@ -630,7 +649,7 @@ input,select{ font-family:inherit; }
 .tile-fav.active svg path{ fill:var(--ember); }
 
 .tile-name{
-  font-size:13.5px; font-weight:600; color:#ffffff;
+  font-size:13.5px; font-weight:600;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .tile-genre{

@@ -66,6 +66,12 @@
           <svg viewBox="0 0 24 24" fill="none"><path d="M14 4h6v6M20 4l-9 9M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>Open this stream directly</span>
         </button>
+        <details class="np-unblock-hint" id="npUnblockHint" hidden>
+          <summary>Or let this browser play HTTP streams here</summary>
+          <p><strong>Chrome / Edge:</strong> click the lock icon in the address bar &rarr; Site settings &rarr; set "Insecure content" to Allow &rarr; reload this page.</p>
+          <p><strong>Firefox:</strong> visit about:config, search for security.mixed_content.block_active_content, and set it to false.</p>
+          <p><strong>Safari:</strong> doesn&rsquo;t offer a per-site option for this &mdash; use "Open this stream directly" above instead.</p>
+        </details>
       </div>
 
       <div class="np-controls">
