@@ -397,7 +397,28 @@
     el.disc.classList.toggle('spinning', isPlaying);
   }
 
-  function playStation(station) {
+  // Some directory entries point at a .pls/.m3u *wrapper* file rather than
+  // the raw stream (VLC follows this transparently; <audio> can't). If the
+  // URL literally ends in one of those extensions, resolve it to the real
+  // stream URL first. Anything else — including the actual audio stream
+  // itself, which never ends in .pls/.m3u — is left untouched so we never
+  // try to read an infinite live stream as text.
+  async function resolvePlaylistUrl(url) {
+    if (!/\.(pls|m3u)(\?|$)/i.test(url)) return url;
+    try {
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) return url;
+      const text = await res.text();
+      const plsMatch = text.match(/^\s*File\d*\s*=\s*(\S+)/im);
+      if (plsMatch) return httpsify(plsMatch[1].trim());
+      const line = text.split(/\r?\n/).map(l => l.trim())
+        .find(l => l && !l.startsWith('#') && /^https?:\/\//i.test(l));
+      if (line) return httpsify(line);
+    } catch { /* network/CORS failure on the wrapper — fall through and let normal playback error handling take over */ }
+    return url;
+  }
+
+  async function playStation(station) {
     if (!station || !station.url) return;
     destroyHls();
     state.playingUrl = station.url;
@@ -412,8 +433,12 @@
 
     setStatus('buffering', 'Connecting…');
     setPlayIcon(false);
+    renderActiveList();
 
-    const url = station.url;
+    const requestedUrl = station.url;
+    const url = await resolvePlaylistUrl(requestedUrl);
+    if (state.playingUrl !== requestedUrl) return; // user picked something else while this resolved
+
     const isHls = /\.m3u8($|\?)/i.test(url);
 
     if (isHls && window.Hls && window.Hls.isSupported()) {
@@ -427,6 +452,11 @@
       });
       hls.loadSource(url);
       hls.attachMedia(el.audio);
+    } else if (window.Hls && el.audio.canPlayType && !el.audio.canPlayType('application/vnd.apple.mpegurl') && isHls) {
+      // HLS requested but neither hls.js nor native support is available.
+      setStatus('err', 'Format unsupported');
+      toast(`Couldn't play "${station.name}" — this browser can't decode HLS streams.`);
+      return;
     } else {
       el.audio.src = url;
     }
@@ -434,8 +464,6 @@
     el.audio.play().catch(() => {
       // Autoplay was blocked or the stream failed; UI reflects via audio events.
     });
-
-    renderActiveList();
   }
 
   function togglePlayPause() {
@@ -468,8 +496,10 @@
 
   /* ---------------- Check channels ---------------- */
   async function probeStream(url, timeoutMs = 6000) {
+    if (/\.m3u8($|\?)/i.test(url)) return 'unknown'; // HLS probing needs hls.js; skip for speed
+    const resolved = await resolvePlaylistUrl(url);
+    if (/\.m3u8($|\?)/i.test(resolved)) return 'unknown'; // wrapper resolved to an HLS stream
     return new Promise((resolve) => {
-      if (/\.m3u8($|\?)/i.test(url)) { resolve('unknown'); return; } // HLS probing needs hls.js; skip for speed
       const a = new Audio();
       a.preload = 'none';
       let done = false;
@@ -483,7 +513,7 @@
       a.addEventListener('canplay', () => { clearTimeout(t); finish(true); }, { once: true });
       a.addEventListener('loadedmetadata', () => { clearTimeout(t); finish(true); }, { once: true });
       a.addEventListener('error', () => { clearTimeout(t); finish(false); }, { once: true });
-      try { a.src = url; a.load(); } catch { clearTimeout(t); finish(false); }
+      try { a.src = resolved; a.load(); } catch { clearTimeout(t); finish(false); }
     });
   }
 
