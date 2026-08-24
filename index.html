@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Live Radio — Stream the world</title>
+<meta name="description" content="A free, no-signup internet radio player. Thousands of stations from around the world, browsable by country.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230a0a0c'/%3E%3Ccircle cx='50' cy='50' r='30' fill='none' stroke='%23d7ff4b' stroke-width='7'/%3E%3Ccircle cx='50' cy='50' r='7' fill='%23d7ff4b'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- ============ SIDEBAR : countries ============ -->
+  <aside class="sidebar" aria-label="Browse by country">
+    <div class="sidebar-head">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </span>
+        <h1>Live Radio</h1>
+      </div>
+      <button class="icon-btn" id="sourceBtn" title="Channel source" aria-haspopup="dialog" aria-controls="sourceModal">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="6" y="3" width="12" height="18" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M9 8h6M9 12h6M9 16h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <button class="fav-row" id="favTab" data-code="FAV">
+      <svg class="fav-icon" viewBox="0 0 24 24" fill="none"><path d="M12 20.5s-7.6-4.6-10-9.4C.4 7.7 2.4 4 6.1 4c2 0 3.6 1.1 4.4 2.8C11.3 5.1 13 4 15 4c3.6 0 5.7 3.7 4 7.1-2.4 4.8-10 9.4-10 9.4z" fill="currentColor"/></svg>
+      <span>Fav</span>
+      <span class="fav-count" id="favCount">0</span>
+    </button>
+
+    <div class="country-scroll" id="countryList" role="list" aria-label="Countries"></div>
+    <div class="sidebar-fade" aria-hidden="true"></div>
+  </aside>
+
+  <!-- ============ NOW PLAYING ============ -->
+  <section class="now-playing" aria-label="Now playing">
+    <div class="np-card">
+      <div class="disc-wrap">
+        <div class="disc" id="disc">
+          <div class="disc-art" id="discArt"></div>
+          <div class="disc-groove"></div>
+          <div class="disc-groove disc-groove--2"></div>
+          <div class="disc-hole"></div>
+        </div>
+        <button class="play-fab" id="playFab" title="Play">
+          <svg id="iconPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+          <svg id="iconPause" viewBox="0 0 24 24" fill="currentColor" hidden><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+        </button>
+      </div>
+
+      <div class="np-meta">
+        <p class="np-genre" id="npGenre">Pick a station to begin</p>
+        <h2 class="np-name" id="npName">Nothing playing</h2>
+        <div class="np-status" id="npStatus">
+          <span class="live-dot" id="liveDot" aria-hidden="true"></span>
+          <span id="npStatusText">Off air</span>
+        </div>
+      </div>
+
+      <div class="np-controls">
+        <button class="ctrl-btn" id="prevBtn" title="Previous station">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14l-11-7z"/></svg>
+        </button>
+        <button class="ctrl-btn ctrl-btn--main" id="playBtn" title="Play / pause">
+          <svg id="iconPlay2" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+          <svg id="iconPause2" viewBox="0 0 24 24" fill="currentColor" hidden><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+        </button>
+        <button class="ctrl-btn" id="nextBtn" title="Next station">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 5h-2v14h2zM4 5v14l11-7z"/></svg>
+        </button>
+        <button class="ctrl-btn ctrl-btn--heart" id="npFav" title="Add to favourites">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 20.5s-7.6-4.6-10-9.4C.4 7.7 2.4 4 6.1 4c2 0 3.6 1.1 4.4 2.8C11.3 5.1 13 4 15 4c3.6 0 5.7 3.7 4 7.1-2.4 4.8-10 9.4-10 9.4z" stroke="currentColor" stroke-width="1.8"/></svg>
+        </button>
+      </div>
+
+      <div class="np-volume">
+        <svg viewBox="0 0 24 24" fill="currentColor" class="vol-icon"><path d="M4 9v6h4l5 5V4L8 9z"/></svg>
+        <input type="range" id="volumeSlider" min="0" max="100" value="80" aria-label="Volume">
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CHANNEL GRID ============ -->
+  <section class="channels" aria-label="Channels">
+    <div class="channels-toolbar">
+      <div class="search-field">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <input type="search" id="searchInput" placeholder="Search channel, genre…" autocomplete="off">
+      </div>
+      <button class="check-btn" id="checkBtn">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 12l5 5L20 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Check channels</span>
+      </button>
+    </div>
+
+    <div class="channels-headline">
+      <h3 id="channelsTitle">Select a country</h3>
+      <span class="channels-count" id="channelsCount"></span>
+    </div>
+
+    <div class="grid" id="grid" role="list"></div>
+    <button class="load-more" id="loadMoreBtn" hidden>Show more channels</button>
+    <p class="empty-state" id="emptyState" hidden>No channels here yet. Try another search or country.</p>
+  </section>
+
+</div>
+
+<!-- ============ CHANNEL SOURCE MODAL ============ -->
+<div class="modal-backdrop" id="sourceBackdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sourceModalTitle" id="sourceModal">
+    <h4 id="sourceModalTitle">Channel Source</h4>
+    <label class="field-label" for="sourceSelect">Playlist</label>
+    <select id="sourceSelect">
+      <option value="default">Default — All IPRD stations</option>
+      <option value="custom">Custom URL</option>
+    </select>
+    <div id="customUrlWrap" hidden>
+      <label class="field-label" for="customUrlInput">M3U / M3U8 URL</label>
+      <input type="url" id="customUrlInput" placeholder="https://example.com/playlist.m3u" autocomplete="off">
+    </div>
+    <p class="modal-error" id="modalError" hidden></p>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="sourceCancel">Cancel</button>
+      <button class="btn-solid" id="sourceLoad">Load</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<audio id="audio" preload="none" crossorigin="anonymous"></audio>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js" defer></script>
+<script src="app.js" defer></script>
+</body>
+</html>
