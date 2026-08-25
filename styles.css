@@ -103,7 +103,7 @@ input,select{ font-family:inherit; }
     background:var(--bg);
   }
   .channels-toolbar{ top:0; padding-top:2px; margin-bottom:0; }
-  .channels-headline{ top:46px; padding:10px 2px 12px; margin:0; }
+  
 }
 
 @media (max-width: 1180px){
